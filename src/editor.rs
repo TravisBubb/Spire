@@ -9,7 +9,7 @@ use ratatui::layout::{Constraint, Position};
 use ratatui::style::{Color, Style};
 use ratatui::text::Text;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, ErrorKind};
+use std::io::{self, BufRead, BufReader, ErrorKind, Write};
 use std::path::Path;
 
 #[derive(PartialEq)]
@@ -44,6 +44,8 @@ pub struct Editor {
     textarea: TextArea,
     /// The file currently open in the editor
     file_name: Option<String>,
+    /// Current status text
+    status_message: String,
 }
 
 impl Editor {
@@ -53,6 +55,7 @@ impl Editor {
             rows: Vec::new(),
             textarea: TextArea::new(Vec::new()),
             file_name: None,
+            status_message: String::default(),
         }
     }
 
@@ -80,12 +83,16 @@ impl Editor {
                 let [main_area, status_area] = vertical.areas(frame.area());
 
                 let mut status_text = String::new();
-                fmt::write(&mut status_text, format_args!("Mode: {}", self.mode)).unwrap();
+                fmt::write(
+                    &mut status_text,
+                    format_args!("Mode: {} | {}", self.mode, self.status_message),
+                )
+                .unwrap();
                 frame.render_widget(Text::from(status_text), status_area);
                 frame.render_widget(self.textarea.clone(), main_area);
                 frame.set_cursor_position(Position::new(
-                    self.textarea.get_cursor_x(),
-                    self.textarea.get_cursor_y(),
+                    self.textarea.get_cursor_x(main_area),
+                    self.textarea.get_cursor_y(main_area),
                 ));
             })?;
 
@@ -105,16 +112,29 @@ impl Editor {
                     break;
                 }
 
-                self.handle_input(input);
+                let file_changed = self.handle_input(input);
+                if file_changed {
+                    // TODO: Update this to make more efficient. We should not have to update all rows when any change is made.
+                    let lines = self.textarea.get_lines();
+                    self.update_rows(lines)
+                }
             }
         }
         ratatui::restore();
         Ok(())
     }
 
+    /// Update the currently stored rows given a vector of strings
+    fn update_rows(&mut self, mut lines: Vec<String>) {
+        self.rows.clear();
+        for line in lines.iter_mut() {
+            self.rows.push(Row::from_slice(line.as_bytes()));
+        }
+    }
+
     /// Handle a key input with default key mappings.
     ///
-    /// Return if the input modified the text in the textarea.
+    /// Return true if the input modified the text in the textarea.
     fn handle_input(&mut self, input: Input) -> bool {
         if self.mode == EditorMode::Normal {
             return self.handle_normal_input(input);
@@ -127,6 +147,13 @@ impl Editor {
 
     fn handle_normal_input(&mut self, input: Input) -> bool {
         let modified = match input {
+            Input {
+                key: Key::Character('W'),
+                ..
+            } => {
+                self.save_file();
+                false
+            }
             Input {
                 key: Key::Character('i'),
                 ..
@@ -191,6 +218,20 @@ impl Editor {
                 self.set_normal_mode();
                 false
             }
+            Input {
+                key: Key::Character(c),
+                ..
+            } => {
+                self.textarea.insert_character(c);
+                true
+            }
+            Input {
+                key: Key::Backspace,
+                ..
+            } => {
+                self.textarea.delete_left();
+                true
+            }
             _ => false,
         };
 
@@ -214,10 +255,28 @@ impl Editor {
         match File::open(path) {
             Ok(file) => {
                 for line in BufReader::new(file).split(b'\n') {
-                    self.rows.push(Row::new(line?));
+                    self.rows.push(Row::from_vec(line?));
                 }
             }
             Err(e) => return Err(e.into()),
+        }
+
+        Ok(())
+    }
+
+    fn save_file(&mut self) -> Result<(), Error> {
+        if let Some(file_name) = &self.file_name {
+            let file_result = std::fs::OpenOptions::new().write(true).open(file_name);
+
+            match file_result {
+                Ok(mut file) => {
+                    for row in self.rows.iter_mut() {
+                        file.write_all(row.get_bytes())?;
+                    }
+                    file.flush()?;
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
 
         Ok(())

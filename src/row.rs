@@ -6,8 +6,22 @@ pub struct Row {
 }
 
 impl Row {
-    pub fn new(chars: Vec<u8>) -> Self {
+    pub fn from_vec(mut chars: Vec<u8>) -> Self {
+        if !chars.ends_with(&[b'\n']) {
+            chars.push(b'\n');
+        }
+
         Row { characters: chars }
+    }
+
+    pub fn from_slice(chars: &[u8]) -> Self {
+        let mut char_vec = chars.to_vec();
+
+        if !char_vec.ends_with(&[b'\n']) {
+            char_vec.push(b'\n');
+        }
+
+        Row { characters: chars.to_vec() }
     }
 
     pub fn print(&self) {
@@ -15,6 +29,10 @@ impl Row {
             print!("{}", (*c) as char);
         }
         println!();
+    }
+
+    pub fn get_bytes(&mut self) -> &[u8] {
+        self.characters.as_slice()
     }
 
     pub fn get_string(&mut self) -> String {
