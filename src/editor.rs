@@ -232,6 +232,13 @@ impl Editor {
                 self.textarea.delete_left();
                 true
             }
+            Input {
+                key: Key::Enter,
+                ..
+            } => {
+                self.textarea.insert_new_line();
+                true
+            }
             _ => false,
         };
 

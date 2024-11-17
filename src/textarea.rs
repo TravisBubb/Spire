@@ -1,3 +1,5 @@
+use std::{borrow::BorrowMut, ops::Index};
+
 use ratatui::{
     layout::{Margin, Position, Rect},
     style::{Color, Style},
@@ -139,10 +141,31 @@ impl TextArea {
         self.cursor_x = self.lines[self.cursor_y].len() - 1;
     }
 
+    /// Move cursor to the beginning of the current line
+    pub fn move_cursor_to_beginning(&mut self) {
+        self.cursor_x = 0;
+    }
+
     /// Insert a single character at the current cursor position
     pub fn insert_character(&mut self, c: char) {
         self.lines[self.cursor_y].insert(self.cursor_x, c);
         self.cursor_x += 1;
+    }
+
+    /// Insert a new line from the current cursor position
+    pub fn insert_new_line(&mut self) {
+        let mut new_string = "\n".to_string();
+        let mut current_line = self.get_current_line();
+
+        if self.cursor_x < current_line.len() - 1 {
+            new_string.push_str(&current_line[self.cursor_x..]);
+            current_line = current_line[..self.cursor_x].to_string();
+            self.lines[self.cursor_y] = current_line;
+        }
+
+        self.lines.insert(self.cursor_y + 1, new_string);
+        self.move_cursor_down();
+        self.move_cursor_to_beginning();
     }
 
     /// Delete 1 character to the left of the cursor
@@ -151,13 +174,7 @@ impl TextArea {
             return;
         }
 
-        if self.cursor_x == 0
-            && self.lines[self.cursor_y]
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .count()
-                == 0
-        {
+        if self.cursor_x == 0 && self.get_current_line().remove_whitespace().len() == 0 {
             self.lines.remove(self.cursor_y);
             self.move_cursor_left();
             return;
@@ -165,5 +182,19 @@ impl TextArea {
 
         self.move_cursor_left();
         self.lines[self.cursor_y].remove(self.cursor_x);
+    }
+
+    fn get_current_line(&self) -> String {
+        self.lines[self.cursor_y].to_string()
+    }
+}
+
+pub trait StringExtensions {
+    fn remove_whitespace(&self) -> String;
+}
+
+impl StringExtensions for String {
+    fn remove_whitespace(&self) -> String {
+        self.chars().filter(|c| !c.is_whitespace()).collect()
     }
 }
